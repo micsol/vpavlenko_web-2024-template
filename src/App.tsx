@@ -1,175 +1,457 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import useLocalStorageState from "use-local-storage-state";
 import styled from "styled-components";
 import {
   Typography,
   TextField,
   Button,
+  Card,
+  CardContent,
+  CardActions,
+  IconButton,
+  Box,
   List,
   ListItem,
   ListItemText,
-  ListItemSecondaryAction,
-  IconButton,
-  Checkbox,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Slider,
+  FormControl,
+  InputLabel,
+  Input,
+  FormHelperText,
+  Stack,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
+import RestaurantIcon from "@mui/icons-material/Restaurant";
+import AddIcon from "@mui/icons-material/Add";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 
-interface Todo {
+interface Ingredient {
+  name: string;
+  amount: number;
+  unit: string;
+}
+
+interface Recipe {
   id: number;
-  text: string;
-  done: boolean;
+  name: string;
+  ingredients: Ingredient[];
+  instructions: string;
+  portions: number;
+  originalPortions: number;
+  image?: string;
 }
 
 const AppContainer = styled.div`
-  max-width: 600px;
+  max-width: 800px;
   margin: 0 auto;
   padding: 2rem;
-  text-align: center;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  min-height: 100vh;
+`;
+
+const RecipeCard = styled(Card)`
+  && {
+    margin: 1rem 0;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
+    transition: transform 0.2s;
+    &:hover {
+      transform: translateY(-5px);
+    }
+  }
 `;
 
 const StyledButton = styled(Button)`
   && {
-    margin-top: 1rem;
+    margin: 1rem 0;
+    background: linear-gradient(45deg, #FE6B8B 30%, #FF8E53 90%);
+    color: white;
+    &:hover {
+      background: linear-gradient(45deg, #FF8E53 30%, #FE6B8B 90%);
+    }
   }
 `;
 
-const StyledListItemText = styled(ListItemText)<{ done: boolean }>`
-  && {
-    text-decoration: ${(props) => (props.done ? "line-through" : "none")};
-  }
+const VisuallyHiddenInput = styled('input')`
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
 `;
 
-function App() {
-  const [todos, setTodos] = useLocalStorageState<Todo[]>("todos", {
-    defaultValue: [],
+interface RecipeFormData {
+  name: string;
+  ingredients: Ingredient[];
+  instructions: string;
+  portions: number;
+  image?: string;
+}
+
+const initialFormData: RecipeFormData = {
+  name: "",
+  ingredients: [{ name: "", amount: 0, unit: "" }],
+  instructions: "",
+  portions: 4,
+};
+
+const App = () => {
+  const [recipes, setRecipes] = useLocalStorageState<Recipe[]>("recipes", {
+    defaultValue: [
+      {
+        id: 1,
+        name: "Спагетти Карбонара",
+        ingredients: [
+          { name: "Спагетти", amount: 400, unit: "г" },
+          { name: "Бекон", amount: 200, unit: "г" },
+          { name: "Яйца", amount: 4, unit: "шт" },
+          { name: "Пармезан", amount: 100, unit: "г" },
+        ],
+        instructions: "1. Отварить пасту\n2. Обжарить бекон\n3. Смешать яйца с сыром\n4. Соединить все ингредиенты",
+        portions: 4,
+        originalPortions: 4
+      },
+      {
+        id: 2,
+        name: "Борщ",
+        ingredients: [
+          { name: "Говядина", amount: 500, unit: "г" },
+          { name: "Свекла", amount: 300, unit: "г" },
+          { name: "Капуста", amount: 400, unit: "г" },
+          { name: "Картофель", amount: 400, unit: "г" },
+        ],
+        instructions: "1. Сварить бульон\n2. Добавить овощи\n3. Варить до готовности",
+        portions: 6,
+        originalPortions: 6
+      },
+      // ... добавьте еще 3 рецепта по аналогии
+    ],
   });
-  const [newTodo, setNewTodo] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editText, setEditText] = useState(""); // Add this line
 
-  useEffect(() => {
-    if (todos.length === 0) {
-      const boilerplateTodos = [
-        { id: 1, text: "Install Node.js", done: false },
-        { id: 2, text: "Install Cursor IDE", done: false },
-        { id: 3, text: "Log into Github", done: false },
-        { id: 4, text: "Fork a repo", done: false },
-        { id: 5, text: "Make changes", done: false },
-        { id: 6, text: "Commit", done: false },
-        { id: 7, text: "Deploy", done: false },
-      ];
-      setTodos(boilerplateTodos);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [formData, setFormData] = useState<RecipeFormData>(initialFormData);
+  const [formErrors, setFormErrors] = useState<Partial<RecipeFormData>>({});
+
+  const handlePortionsChange = (recipe: Recipe, newPortions: number) => {
+    setRecipes(recipes.map(r => {
+      if (r.id === recipe.id) {
+        const ratio = newPortions / r.originalPortions;
+        const updatedIngredients = r.ingredients.map(ing => ({
+          ...ing,
+          amount: Number((ing.amount * ratio).toFixed(1))
+        }));
+        return { ...r, portions: newPortions, ingredients: updatedIngredients };
+      }
+      return r;
+    }));
+  };
+
+  const validateForm = (): boolean => {
+    const errors: Partial<RecipeFormData> = {};
+    
+    if (!formData.name.trim()) {
+      errors.name = "Название рецепта обязательно";
     }
-  }, [todos, setTodos]);
+    if (formData.ingredients.some(ing => !ing.name || ing.amount <= 0 || !ing.unit)) {
+      errors.ingredients = [] as Ingredient[];
+      formData.ingredients.forEach(ing => {
+        if (!ing.name || ing.amount <= 0 || !ing.unit) {
+          errors.ingredients?.push(ing);
+        }
+      });
+    }
+    if (!formData.instructions.trim()) {
+      errors.instructions = "Инструкции обязательны";
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
-  const handleAddTodo = () => {
-    if (newTodo.trim() !== "") {
-      setTodos([
-        ...todos,
-        { id: Date.now(), text: newTodo.trim(), done: false },
+  const handleAddRecipe = () => {
+    setFormData(initialFormData);
+    setIsDialogOpen(true);
+  };
+
+  const handleEditRecipe = (recipe: Recipe) => {
+    setEditingRecipe(recipe);
+    setFormData({
+      name: recipe.name,
+      ingredients: [...recipe.ingredients],
+      instructions: recipe.instructions,
+      portions: recipe.portions,
+      image: recipe.image,
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleDeleteRecipe = (id: number) => {
+    setRecipes(recipes.filter(recipe => recipe.id !== id));
+  };
+
+  const handleSaveRecipe = () => {
+    if (!validateForm()) return;
+
+    if (editingRecipe) {
+      setRecipes(recipes.map(recipe =>
+        recipe.id === editingRecipe.id
+          ? {
+              ...recipe,
+              ...formData,
+              originalPortions: formData.portions,
+            }
+          : recipe
+      ));
+    } else {
+      setRecipes([
+        ...recipes,
+        {
+          id: Date.now(),
+          ...formData,
+          originalPortions: formData.portions,
+        },
       ]);
-      setNewTodo("");
     }
+
+    setIsDialogOpen(false);
+    setEditingRecipe(null);
+    setFormData(initialFormData);
   };
 
-  const handleDeleteTodo = (id: number) => {
-    setTodos(todos.filter((todo) => todo.id !== id));
-  };
-
-  const handleToggleTodo = (id: number) => {
-    setTodos(
-      todos.map((todo) =>
-        todo.id === id ? { ...todo, done: !todo.done } : todo
-      )
-    );
-  };
-
-  const handleEditTodo = (id: number) => {
-    setEditingId(id);
-    const todoToEdit = todos.find((todo) => todo.id === id);
-    if (todoToEdit) {
-      setEditText(todoToEdit.text);
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({
+          ...prev,
+          image: reader.result as string,
+        }));
+      };
+      reader.readAsDataURL(file);
     }
-  };
-
-  const handleUpdateTodo = (id: number) => {
-    if (editText.trim() !== "") {
-      setTodos(
-        todos.map((todo) =>
-          todo.id === id ? { ...todo, text: editText.trim() } : todo
-        )
-      );
-    }
-    setEditingId(null);
-    setEditText("");
   };
 
   return (
     <AppContainer>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Todo List
+      <Typography variant="h3" component="h1" gutterBottom 
+        sx={{ color: '#2c3e50', textAlign: 'center', fontWeight: 'bold' }}>
+        <RestaurantIcon sx={{ fontSize: 40, marginRight: 2 }} />
+        Книга рецептов
       </Typography>
-      <TextField
-        fullWidth
-        variant="outlined"
-        label="New Todo"
-        value={newTodo}
-        onChange={(e) => setNewTodo(e.target.value)}
-        onKeyPress={(e) => e.key === "Enter" && handleAddTodo()}
-        autoFocus // Add this line to enable autofocus
-      />
+
       <StyledButton
         variant="contained"
-        color="primary"
         fullWidth
-        onClick={handleAddTodo}
+        startIcon={<AddIcon />}
+        onClick={handleAddRecipe}
       >
-        Add Todo
+        Добавить рецепт
       </StyledButton>
-      <List>
-        {todos.map((todo) => (
-          <ListItem key={todo.id} dense>
-            <Checkbox
-              edge="start"
-              checked={todo.done}
-              onChange={() => handleToggleTodo(todo.id)}
-            />
-            {editingId === todo.id ? (
-              <TextField
-                fullWidth
-                value={editText}
-                onChange={(e) => setEditText(e.target.value)}
-                onBlur={() => handleUpdateTodo(todo.id)}
-                onKeyPress={(e) =>
-                  e.key === "Enter" && handleUpdateTodo(todo.id)
-                }
-                autoFocus
+
+      {recipes.map((recipe) => (
+        <RecipeCard key={recipe.id}>
+          <CardContent>
+            <Typography variant="h5" component="h2">
+              {recipe.name}
+            </Typography>
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle1">
+                Порции: {recipe.portions}
+              </Typography>
+              <Slider
+                value={recipe.portions}
+                min={1}
+                max={12}
+                onChange={(_, value) => handlePortionsChange(recipe, value as number)}
+                marks
+                valueLabelDisplay="auto"
               />
-            ) : (
-              <StyledListItemText primary={todo.text} done={todo.done} />
+            </Box>
+            <List>
+              {recipe.ingredients.map((ing, index) => (
+                <ListItem key={index}>
+                  <ListItemText 
+                    primary={`${ing.name}: ${ing.amount} ${ing.unit}`}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          </CardContent>
+          <CardActions>
+            <IconButton onClick={() => handleEditRecipe(recipe)}>
+              <EditIcon />
+            </IconButton>
+            <IconButton onClick={() => handleDeleteRecipe(recipe.id)}>
+              <DeleteIcon />
+            </IconButton>
+          </CardActions>
+        </RecipeCard>
+      ))}
+
+      <Dialog 
+        open={isDialogOpen} 
+        onClose={() => setIsDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          {editingRecipe ? "Редактировать рецепт" : "Новый рецепт"}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={3} sx={{ mt: 2 }}>
+            <FormControl error={!!formErrors.name}>
+              <InputLabel>Название рецепта</InputLabel>
+              <Input
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  name: e.target.value
+                }))}
+              />
+              {formErrors.name && (
+                <FormHelperText>{formErrors.name}</FormHelperText>
+              )}
+            </FormControl>
+
+            <Box>
+              <Typography variant="subtitle1" gutterBottom>
+                Ингредиенты
+              </Typography>
+              {formData.ingredients.map((ing, index) => (
+                <Stack key={index} direction="row" spacing={2} sx={{ mb: 2 }}>
+                  <TextField
+                    label="Название"
+                    value={ing.name}
+                    onChange={(e) => {
+                      const newIngredients = [...formData.ingredients];
+                      newIngredients[index].name = e.target.value;
+                      setFormData(prev => ({
+                        ...prev,
+                        ingredients: newIngredients
+                      }));
+                    }}
+                  />
+                  <TextField
+                    label="Количество"
+                    type="number"
+                    value={ing.amount}
+                    onChange={(e) => {
+                      const newIngredients = [...formData.ingredients];
+                      newIngredients[index].amount = Number(e.target.value);
+                      setFormData(prev => ({
+                        ...prev,
+                        ingredients: newIngredients
+                      }));
+                    }}
+                  />
+                  <TextField
+                    label="Единица измерения"
+                    value={ing.unit}
+                    onChange={(e) => {
+                      const newIngredients = [...formData.ingredients];
+                      newIngredients[index].unit = e.target.value;
+                      setFormData(prev => ({
+                        ...prev,
+                        ingredients: newIngredients
+                      }));
+                    }}
+                  />
+                  <IconButton 
+                    onClick={() => {
+                      const newIngredients = formData.ingredients.filter((_, i) => i !== index);
+                      setFormData(prev => ({
+                        ...prev,
+                        ingredients: newIngredients
+                      }));
+                    }}
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                </Stack>
+              ))}
+              <Button
+                variant="outlined"
+                onClick={() => {
+                  setFormData(prev => ({
+                    ...prev,
+                    ingredients: [...prev.ingredients, { name: "", amount: 0, unit: "" }]
+                  }));
+                }}
+              >
+                Добавить ингредиент
+              </Button>
+            </Box>
+
+            <FormControl error={!!formErrors.instructions}>
+              <TextField
+                multiline
+                rows={4}
+                label="Инструкции"
+                value={formData.instructions}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  instructions: e.target.value
+                }))}
+              />
+              {formErrors.instructions && (
+                <FormHelperText>{formErrors.instructions}</FormHelperText>
+              )}
+            </FormControl>
+
+            <FormControl>
+              <InputLabel>Количество порций</InputLabel>
+              <Input
+                type="number"
+                value={formData.portions}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  portions: Number(e.target.value)
+                }))}
+              />
+            </FormControl>
+
+            <Button
+              component="label"
+              variant="contained"
+              startIcon={<CloudUploadIcon />}
+            >
+              Загрузить фото
+              <VisuallyHiddenInput
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+              />
+            </Button>
+            {formData.image && (
+              <Box sx={{ mt: 2 }}>
+                <img 
+                  src={formData.image} 
+                  alt="Preview" 
+                  style={{ maxWidth: '100%', maxHeight: '200px' }} 
+                />
+              </Box>
             )}
-            <ListItemSecondaryAction>
-              <IconButton
-                edge="end"
-                aria-label="edit"
-                onClick={() => handleEditTodo(todo.id)}
-              >
-                <EditIcon />
-              </IconButton>
-              <IconButton
-                edge="end"
-                aria-label="delete"
-                onClick={() => handleDeleteTodo(todo.id)}
-              >
-                <DeleteIcon />
-              </IconButton>
-            </ListItemSecondaryAction>
-          </ListItem>
-        ))}
-      </List>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsDialogOpen(false)}>Отмена</Button>
+          <Button onClick={handleSaveRecipe} variant="contained">
+            Сохранить
+          </Button>
+        </DialogActions>
+      </Dialog>
     </AppContainer>
   );
-}
+};
 
 export default App;
