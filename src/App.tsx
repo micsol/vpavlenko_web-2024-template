@@ -137,7 +137,7 @@ const App = () => {
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
-  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [] = useState<Recipe | null>(null);
   const [formData, setFormData] = useState<RecipeFormData>(initialFormData);
   const [formErrors, setFormErrors] = useState<Partial<RecipeFormData>>({});
 
